@@ -1,60 +1,83 @@
-name: Build & Release EXE (PyInstaller)
+name: Build & Release EXE (diagnostic)
 
 on:
   push:
-    tags:
-      - "v*"          # e.g., v1.0.0 triggers a release build
-  workflow_dispatch:   # allow manual runs from the Actions tab
+    tags: ["v*"]        # e.g. v1.0.0
+  workflow_dispatch:     # allow manual run
 
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Show repo tree (root)
+        run: |
+          echo "== LS ROOT =="
+          dir
+        shell: pwsh
+
+      - name: Fail early if script missing
+        run: |
+          if (-not (Test-Path "ff_blob_checker_gui.py")) {
+            echo "::error ::ff_blob_checker_gui.py not found at repo root."
+            echo "Present files:"
+            dir
+            exit 1
+          }
+        shell: pwsh
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install build tools
+      - name: Install build deps
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
+          if (Test-Path "requirements.txt") {
+            pip install -r requirements.txt
+          } else {
+            pip install pyinstaller
+          }
 
-      - name: Build EXE (PyInstaller)
+      - name: Build with PyInstaller
         run: |
           pyinstaller --noconsole --clean --onefile ff_blob_checker_gui.py
         shell: pwsh
 
-      - name: Rename artifact with version
+      - name: List dist artifacts
+        run: |
+          echo "== LS DIST =="
+          if (Test-Path "dist") { dir dist } else { echo "No dist directory found." }
+        shell: pwsh
+
+      - name: Upload build artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-folder
+          path: dist/
+
+      - name: Rename EXE with version (if present)
         id: rename
+        if: success() && exists('dist/ff_blob_checker_gui.exe')
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $ver = "${{ github.ref_name }}" -replace '^v','dev'
           $src = "dist/ff_blob_checker_gui.exe"
           $dst = "dist/ff_blob_checker_gui-$ver-windows-x64.exe"
-          if (!(Test-Path $src)) { throw "EXE not found: $src" }
-          Move-Item $src $dst
+          Move-Item $src $dst -Force
           echo "artifact=$dst" >> $env:GITHUB_OUTPUT
           echo "version=$ver"  >> $env:GITHUB_OUTPUT
 
-      - name: Upload build artifact (for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ff_blob_checker_gui-${{ steps.rename.outputs.version }}-windows-x64
-          path: ${{ steps.rename.outputs.artifact }}
-
-      - name: Create GitHub Release
+      - name: Create GitHub Release (only if EXE exists)
+        if: steps.rename.outputs.artifact != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "ff_blob_checker_gui ${{ steps.rename.outputs.version }}"
-          draft: false
-          prerelease: false
-          files: |
-            ${{ steps.rename.outputs.artifact }}
+          files: ${{ steps.rename.outputs.artifact }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
