@@ -3,7 +3,7 @@ name: Build & Release EXE (PyInstaller)
 on:
   push:
     tags: ["v*"]          # e.g. v1.0.0
-  workflow_dispatch:       # manual trigger from Actions tab
+  workflow_dispatch:       # allow manual trigger
 
 permissions:
   contents: write          # needed to create Releases
@@ -69,19 +69,40 @@ jobs:
             Write-Host 'No EXE found to rename.'
           }
 
-      - name: Upload build artifact (always)
+      - name: Create portable ZIP
+        id: zip
+        if: ${{ steps.rename.outputs.artifact }}
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.rename.outputs.version }}"
+          $zip = "dist/ff_blob_checker_gui-$ver-windows-x64-portable.zip"
+
+          # Stage folder
+          New-Item -ItemType Directory -Force -Path "dist/stage" | Out-Null
+          Copy-Item "${{ steps.rename.outputs.artifact }}" "dist/stage/"
+          if (Test-Path "README.md") { Copy-Item "README.md" "dist/stage/" }
+          if (Test-Path "LICENSE")   { Copy-Item "LICENSE"   "dist/stage/" }
+
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "dist/stage/*" -DestinationPath $zip
+
+          echo "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifacts (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dist-folder
           path: dist/
 
-      - name: Create GitHub Release (only if EXE exists)
+      - name: Create GitHub Release (attach EXE + ZIP)
         if: ${{ steps.rename.outputs.artifact }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "ff_blob_checker_gui ${{ steps.rename.outputs.version }}"
-          files: ${{ steps.rename.outputs.artifact }}
+          files: |
+            ${{ steps.rename.outputs.artifact }}
+            ${{ steps.zip.outputs.zip }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
