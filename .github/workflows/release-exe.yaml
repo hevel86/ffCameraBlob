@@ -3,10 +3,10 @@ name: Build & Release EXE (PyInstaller)
 on:
   push:
     tags: ["v*"]          # e.g. v1.0.0
-  workflow_dispatch:       # allow manual run
+  workflow_dispatch:       # manual trigger from Actions tab
 
 permissions:
-  contents: write          # required to create Releases
+  contents: write          # needed to create Releases
 
 jobs:
   build-windows:
@@ -16,21 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Optional: show repo contents to confirm file is at root
-      - name: Show repo tree (root)
+      - name: Confirm script exists at repo root
         shell: pwsh
         run: |
-          echo "== LS ROOT =="
-          dir
-
-      # Hard-fail early if script is not at repo root
-      - name: Confirm script exists
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "ff_blob_checker_gui.py")) {
-            echo "::error ::ff_blob_checker_gui.py not found at repo root."
-            dir
-            exit 1
+          if (-not (Test-Path './ff_blob_checker_gui.py')) {
+            Write-Error 'ff_blob_checker_gui.py not found at repo root.'
           }
 
       - name: Set up Python
@@ -42,76 +32,41 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          if (Test-Path "requirements.txt") {
+          if (Test-Path './requirements.txt') {
             pip install -r requirements.txt
           } else {
             pip install pyinstaller
           }
 
-      # Optional version embedding (works even if script doesn't import it)
-      - name: Prepare version metadata
+      - name: Inject version into script (version.py)
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}" -replace '^v',''
-          "@`n__version__ = '$ver'`n" | Out-File -Encoding utf8 version.py
-          $verCommas = ($ver -replace '\.', ',')
-          @"
-VSVersionInfo(
-  ffi=FixedFileInfo(
-    filevers=($verCommas, 0),
-    prodvers=($verCommas, 0),
-    mask=0x3f,
-    flags=0x0,
-    OS=0x40004,
-    fileType=0x1,
-    subtype=0x0,
-    date=(0, 0)
-  ),
-  kids=[
-    StringFileInfo([
-      StringTable('040904B0', [
-        StringStruct('CompanyName', 'ffCameraBlob'),
-        StringStruct('FileDescription', 'FastForward Blob Checker'),
-        StringStruct('FileVersion', '$ver'),
-        StringStruct('InternalName', 'ff_blob_checker_gui'),
-        StringStruct('OriginalFilename', 'ff_blob_checker_gui.exe'),
-        StringStruct('ProductName', 'FastForward Blob Checker'),
-        StringStruct('ProductVersion', '$ver')
-      ])
-    ]),
-    VarFileInfo([VarStruct('Translation', [1033, 1200])])
-  ]
-)
-"@ | Out-File -Encoding utf8 version_info.txt
+          $ver = '${{ github.ref_name }}' -replace '^v',''
+          Set-Content -Path 'version.py' -Value "__version__ = '$ver'" -Encoding utf8
 
       - name: Build with PyInstaller
         shell: pwsh
         run: |
-          # --noconsole hides a console window for GUI apps
-          pyinstaller --noconsole --clean --onefile `
-            --name ff_blob_checker_gui `
-            --version-file version_info.txt `
-            ff_blob_checker_gui.py
+          pyinstaller --noconsole --clean --onefile --name ff_blob_checker_gui ff_blob_checker_gui.py
 
       - name: List dist artifacts
         shell: pwsh
         run: |
-          echo "== LS DIST =="
-          if (Test-Path "dist") { dir dist } else { echo "No dist directory found." }
+          if (Test-Path './dist') { Get-ChildItem -Recurse './dist' } else { Write-Host 'No dist directory found.' }
 
       - name: Rename EXE with version (if present)
         id: rename
         shell: pwsh
         run: |
-          $src = "dist/ff_blob_checker_gui.exe"
+          $src = 'dist/ff_blob_checker_gui.exe'
           if (Test-Path $src) {
-            $ver = "${{ github.ref_name }}" -replace '^v',''
+            $ver = '${{ github.ref_name }}' -replace '^v',''
             $dst = "dist/ff_blob_checker_gui-$ver-windows-x64.exe"
             Move-Item $src $dst -Force
             echo "artifact=$dst" >> $env:GITHUB_OUTPUT
             echo "version=$ver"  >> $env:GITHUB_OUTPUT
           } else {
-            echo "No EXE found to rename."
+            Write-Host 'No EXE found to rename.'
           }
 
       - name: Upload build artifact (always)
@@ -122,7 +77,7 @@ VSVersionInfo(
           path: dist/
 
       - name: Create GitHub Release (only if EXE exists)
-        if: ${{ steps.rename.outputs.artifact != '' }}
+        if: ${{ steps.rename.outputs.artifact }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
