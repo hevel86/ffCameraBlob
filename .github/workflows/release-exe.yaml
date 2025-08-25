@@ -2,8 +2,8 @@ name: Build & Release EXE (diagnostic)
 
 on:
   push:
-    tags: ["v*"]        # e.g. v1.0.0
-  workflow_dispatch:     # allow manual run
+    tags: ["v*"]         # e.g. v1.0.0
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -22,7 +22,6 @@ jobs:
         run: |
           if (-not (Test-Path "ff_blob_checker_gui.py")) {
             echo "::error ::ff_blob_checker_gui.py not found at repo root."
-            echo "Present files:"
             dir
             exit 1
           }
@@ -41,6 +40,7 @@ jobs:
           } else {
             pip install pyinstaller
           }
+        shell: pwsh
 
       - name: Build with PyInstaller
         run: |
@@ -53,6 +53,21 @@ jobs:
           if (Test-Path "dist") { dir dist } else { echo "No dist directory found." }
         shell: pwsh
 
+      - name: Rename EXE with version (if present)
+        id: rename
+        shell: pwsh
+        run: |
+          $src = "dist/ff_blob_checker_gui.exe"
+          if (Test-Path $src) {
+            $ver = "${{ github.ref_name }}" -replace '^v',''
+            $dst = "dist/ff_blob_checker_gui-$ver-windows-x64.exe"
+            Move-Item $src $dst -Force
+            echo "artifact=$dst" >> $env:GITHUB_OUTPUT
+            echo "version=$ver"  >> $env:GITHUB_OUTPUT
+          } else {
+            echo "No EXE found to rename."
+          }
+
       - name: Upload build artifact (always)
         if: always()
         uses: actions/upload-artifact@v4
@@ -60,20 +75,8 @@ jobs:
           name: dist-folder
           path: dist/
 
-      - name: Rename EXE with version (if present)
-        id: rename
-        if: success() && exists('dist/ff_blob_checker_gui.exe')
-        shell: pwsh
-        run: |
-          $ver = "${{ github.ref_name }}" -replace '^v','dev'
-          $src = "dist/ff_blob_checker_gui.exe"
-          $dst = "dist/ff_blob_checker_gui-$ver-windows-x64.exe"
-          Move-Item $src $dst -Force
-          echo "artifact=$dst" >> $env:GITHUB_OUTPUT
-          echo "version=$ver"  >> $env:GITHUB_OUTPUT
-
       - name: Create GitHub Release (only if EXE exists)
-        if: steps.rename.outputs.artifact != ''
+        if: ${{ steps.rename.outputs.artifact != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
