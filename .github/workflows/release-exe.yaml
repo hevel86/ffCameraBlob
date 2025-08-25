@@ -1,0 +1,60 @@
+name: Build & Release EXE (PyInstaller)
+
+on:
+  push:
+    tags:
+      - "v*"          # e.g., v1.0.0 triggers a release build
+  workflow_dispatch:   # allow manual runs from the Actions tab
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+
+      - name: Build EXE (PyInstaller)
+        run: |
+          pyinstaller --noconsole --clean --onefile ff_blob_checker_gui.py
+        shell: pwsh
+
+      - name: Rename artifact with version
+        id: rename
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $src = "dist/ff_blob_checker_gui.exe"
+          $dst = "dist/ff_blob_checker_gui-$ver-windows-x64.exe"
+          if (!(Test-Path $src)) { throw "EXE not found: $src" }
+          Move-Item $src $dst
+          echo "artifact=$dst" >> $env:GITHUB_OUTPUT
+          echo "version=$ver"  >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff_blob_checker_gui-${{ steps.rename.outputs.version }}-windows-x64
+          path: ${{ steps.rename.outputs.artifact }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "ff_blob_checker_gui ${{ steps.rename.outputs.version }}"
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.rename.outputs.artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
