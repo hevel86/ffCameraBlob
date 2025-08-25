@@ -1,31 +1,37 @@
-name: Build & Release EXE (diagnostic)
+name: Build & Release EXE (PyInstaller)
 
 on:
   push:
-    tags: ["v*"]         # e.g. v1.0.0
-  workflow_dispatch:
+    tags: ["v*"]          # e.g. v1.0.0
+  workflow_dispatch:       # allow manual run
+
+permissions:
+  contents: write          # required to create Releases
 
 jobs:
   build-windows:
     runs-on: windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Optional: show repo contents to confirm file is at root
       - name: Show repo tree (root)
+        shell: pwsh
         run: |
           echo "== LS ROOT =="
           dir
-        shell: pwsh
 
-      - name: Fail early if script missing
+      # Hard-fail early if script is not at repo root
+      - name: Confirm script exists
+        shell: pwsh
         run: |
           if (-not (Test-Path "ff_blob_checker_gui.py")) {
             echo "::error ::ff_blob_checker_gui.py not found at repo root."
             dir
             exit 1
           }
-        shell: pwsh
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +39,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install build deps
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           if (Test-Path "requirements.txt") {
@@ -40,18 +47,57 @@ jobs:
           } else {
             pip install pyinstaller
           }
+
+      # Optional version embedding (works even if script doesn't import it)
+      - name: Prepare version metadata
         shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          "@`n__version__ = '$ver'`n" | Out-File -Encoding utf8 version.py
+          $verCommas = ($ver -replace '\.', ',')
+          @"
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($verCommas, 0),
+    prodvers=($verCommas, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName', 'ffCameraBlob'),
+        StringStruct('FileDescription', 'FastForward Blob Checker'),
+        StringStruct('FileVersion', '$ver'),
+        StringStruct('InternalName', 'ff_blob_checker_gui'),
+        StringStruct('OriginalFilename', 'ff_blob_checker_gui.exe'),
+        StringStruct('ProductName', 'FastForward Blob Checker'),
+        StringStruct('ProductVersion', '$ver')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+"@ | Out-File -Encoding utf8 version_info.txt
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --noconsole --clean --onefile ff_blob_checker_gui.py
         shell: pwsh
+        run: |
+          # --noconsole hides a console window for GUI apps
+          pyinstaller --noconsole --clean --onefile `
+            --name ff_blob_checker_gui `
+            --version-file version_info.txt `
+            ff_blob_checker_gui.py
 
       - name: List dist artifacts
+        shell: pwsh
         run: |
           echo "== LS DIST =="
           if (Test-Path "dist") { dir dist } else { echo "No dist directory found." }
-        shell: pwsh
 
       - name: Rename EXE with version (if present)
         id: rename
