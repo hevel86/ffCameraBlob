@@ -33,7 +33,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("720x520")
+        self.geometry("760x560")
         self.resizable(True, True)
 
         # Variables
@@ -84,7 +84,7 @@ class App(tk.Tk):
 
         # Row 6: Results area
         ttk.Label(frm, text="Results:").grid(row=6, column=0, sticky="w", **pad)
-        self.text = tk.Text(frm, height=16, wrap="word")
+        self.text = tk.Text(frm, height=18, wrap="word")
         self.text.grid(row=7, column=0, columnspan=3, sticky="nsew", **pad)
 
         # Make the text area expandable
@@ -176,9 +176,17 @@ class App(tk.Tk):
         self.text.insert(tk.END, f"Expected max: {expected_max}\n")
         self.text.insert(tk.END, f"Under-max count: {len(under_max)}\n\n")
 
-        # Save a log next to CSV
+        # Prepare timestamped directories and logs
         ts = time.strftime("%Y%m%d_%H%M%S")
         log_path = os.path.join(os.path.dirname(csv_path), f"failed_log_{ts}.csv")
+
+        # Create timestamped run subdirectory inside the chosen failed folder
+        run_failed_dir = None
+        if not analyze_only:
+            run_failed_dir = os.path.join(failed_dir, f"failed_{ts}")
+            os.makedirs(run_failed_dir, exist_ok=True)
+
+        # Write log and optionally move
         with open(log_path, "w", newline="", encoding="utf-8") as lf:
             w = csv.writer(lf)
             w.writerow(["ImageName", "BlobNumResults", "Moved", "Note"])
@@ -191,14 +199,10 @@ class App(tk.Tk):
                 note = ""
 
                 if not analyze_only:
-                    # Ensure failed dir exists
-                    os.makedirs(failed_dir, exist_ok=True)
-
                     src = os.path.join(img_src_dir, img_name)
-                    dst = os.path.join(failed_dir, img_name)
+                    dst = os.path.join(run_failed_dir, img_name)
                     if os.path.exists(src):
                         try:
-                            # Make sure destination subdirs exist if any
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             shutil.move(src, dst)
                             moved = "yes"
@@ -226,7 +230,8 @@ class App(tk.Tk):
         self.text.insert(tk.END, f"\nLog written to: {log_path}\n")
         if not analyze_only:
             self.text.insert(tk.END, f"Moved: {moved_count}, Missing at source: {missing_count}\n")
-            messagebox.showinfo(APP_TITLE, f"Done. Moved {moved_count} files.\nLog: {os.path.basename(log_path)}")
+            self.text.insert(tk.END, f"Failed folder for this run: {run_failed_dir}\n")
+            messagebox.showinfo(APP_TITLE, f"Done. Moved {moved_count} files.\nLog: {os.path.basename(log_path)}\nFolder: {run_failed_dir}")
         else:
             messagebox.showinfo(APP_TITLE, f"Analysis complete.\nUnder-max: {len(under_max)}\nLog: {os.path.basename(log_path)}")
 
