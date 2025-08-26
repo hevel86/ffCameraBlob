@@ -30,6 +30,22 @@ Analysis of CSV file
 
 ---
 
+## Utilities
+
+### `collect_failed.sh`
+A helper script to consolidate results after multiple runs.
+
+- Moves all `.bmp` files from timestamped `failed_YYYYMMDD_HHMMSS/` subfolders into a central `aggregate_failed/` folder.
+- Removes the original `failed_YYYYMMDD_HHMMSS/` subfolders.
+- Deletes any `failed_log*.csv` files in the current directory.
+
+Usage (Linux/macOS, or Windows with Git Bash / WSL):
+```bash
+./collect_failed.sh
+````
+
+---
+
 ## Installation (Local Development)
 Requires Python 3.10+ and Tkinter (bundled with Python).
 
