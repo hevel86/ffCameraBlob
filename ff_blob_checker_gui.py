@@ -5,6 +5,7 @@ import shutil
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from statistics import median, mean
 
 APP_TITLE = "FastForward Blob Checker"
 
@@ -216,11 +217,15 @@ class App(tk.Tk):
 
         return csv_path, img_src_dir, failed_dir
     
-    def parse_blob_info(self, num_results,r,stats):
+    def parse_blob_info(self, num_results,r,areas):
         for i in range(num_results):
             area = int(r.get("BlobArea0"+str(i+1),""))
-
-            #print("BlobArea0"+str(i+1)+": "+str(area))
+            areas.append(area)
+            if area < minArea:
+                minArea = area
+            if area > maxArea:
+                maxArea = area
+            return areas
 
     def _run(self, execute=False):
         # Clear UI
@@ -231,7 +236,7 @@ class App(tk.Tk):
         except Exception as e:
             messagebox.showerror(APP_TITLE, str(e))
             return
-
+        
         # Parse CSV
         try:
             rows = parse_csv(csv_path)
@@ -241,6 +246,7 @@ class App(tk.Tk):
 
         total_rows = len(rows)
         under_max = []
+        blobAreas = []
         for r in rows:
             try:
                 expected_max = int(r.get("BlobNumSearchMax",""))
@@ -249,6 +255,7 @@ class App(tk.Tk):
                     continue
                 if val < expected_max:
                     under_max.append((r.get("ImageName", ""), val))
+                blobAreas = self.parse_blob_info(int(val),r,blobAreas)
             except:
                 ## without this try/except the last line of the csv will throw a fault
                 continue
@@ -306,6 +313,8 @@ class App(tk.Tk):
         self.text.insert(tk.END, f"Total rows: {total_rows}\n")
         self.text.insert(tk.END, f"Expected max: {expected_max}\n")
         self.text.insert(tk.END, f"Under-max count: {len(under_max)}\n")
+        self.text.insert(tk.END, f"Median blob size: " + str(median(blobAreas)) + " Min blob size: " + str(min(blobAreas)) + " Max blob size: " + str(max(blobAreas))+"\n\n")
+        
         self.text.insert(tk.END, f"Log written to: {log_path}\n")
         if execute:
             self.text.insert(tk.END, f"Action: {action_desc}\n")
