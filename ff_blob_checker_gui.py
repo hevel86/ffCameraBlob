@@ -66,10 +66,6 @@ class App(tk.Tk):
         csv_entry.grid(row=0, column=1, sticky="we", **pad)
         ttk.Button(frm, text="Browse…", command=self.browse_csv).grid(row=0, column=2, **pad)
 
-        # Row 1: Expected max
-        ttk.Label(frm, text="Expected BlobNumResults (max):").grid(row=1, column=0, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.expected_var, width=10).grid(row=1, column=1, sticky="w", **pad)
-
         # Separator
         ttk.Separator(frm).grid(row=2, column=0, columnspan=3, sticky="we", padx=10)
 
@@ -219,6 +215,12 @@ class App(tk.Tk):
                 raise ValueError("Please select a destination folder for FAILED images.")
 
         return csv_path, img_src_dir, failed_dir
+    
+    def parse_blob_info(self, num_results,r,stats):
+        for i in range(num_results):
+            area = int(r.get("BlobArea0"+str(i+1),""))
+
+            #print("BlobArea0"+str(i+1)+": "+str(area))
 
     def _run(self, execute=False):
         # Clear UI
@@ -228,13 +230,6 @@ class App(tk.Tk):
             csv_path, img_src_dir, failed_dir = self._resolve_dirs()
         except Exception as e:
             messagebox.showerror(APP_TITLE, str(e))
-            return
-
-        # Parse expected max
-        try:
-            expected_max = int(self.expected_var.get().strip())
-        except Exception:
-            messagebox.showerror(APP_TITLE, "Expected max must be an integer.")
             return
 
         # Parse CSV
@@ -247,11 +242,16 @@ class App(tk.Tk):
         total_rows = len(rows)
         under_max = []
         for r in rows:
-            val = to_float(r.get("BlobNumResults", ""))
-            if val != val:  # NaN
+            try:
+                expected_max = int(r.get("BlobNumSearchMax",""))
+                val = to_float(r.get("BlobNumResults", ""))
+                if val != val:  # NaN
+                    continue
+                if val < expected_max:
+                    under_max.append((r.get("ImageName", ""), val))
+            except:
+                ## without this try/except the last line of the csv will throw a fault
                 continue
-            if val < expected_max:
-                under_max.append((r.get("ImageName", ""), val))
 
         # Prepare timestamp & log path
         ts = time.strftime("%Y%m%d_%H%M%S")
