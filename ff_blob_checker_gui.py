@@ -4,7 +4,9 @@ import csv
 import shutil
 import time
 import tkinter as tk
+from crop import crop_image
 from tkinter import filedialog, messagebox, ttk
+from statistics import median, mean
 from collections import defaultdict
 
 APP_TITLE = "FastForward Blob Checker"
@@ -55,6 +57,11 @@ class App(tk.Tk):
         self.sep_model_var = tk.BooleanVar(value=False)
         self.save_passed_var = tk.BooleanVar(value=False)
 
+        self.minArea = 0
+        self.maxArea = 0
+        self.models = []
+
+        # UI Layout
         self._build_ui()
 
     def _build_ui(self):
@@ -181,6 +188,37 @@ class App(tk.Tk):
             raise ValueError("Please select a destination folder for FAILED images.")
 
         return csv_path, img_src_dir, failed_dir
+    
+    def parse_blob_area(self, num_results,r,areas):
+        
+        for i in range(num_results):
+            area = int(r.get("BlobArea0"+str(i+1),""))
+            areas.append(area)
+            if area < self.minArea:
+                self.minArea = area
+            if area > self.maxArea:
+                self.maxArea = area
+            return areas
+        
+    def extract_blob(self,num_results,r,model_path):
+        ## This saves a cropped image of each blob to folder based on the detected blob.
+        for i in range(num_results):
+            model = int(r.get("ModelNumber0"+str(i+1),""))
+
+            if not (model in self.models):
+                # we need to make the model directory
+                os.mkdir(self.failed_dir_var.get().strip() + "\\model" + str(model))
+                self.models.append(model)
+            
+            posY =  490 ##int(r.get("BlobPositionY0"+str(i+1),""))
+            posX = int(int(r.get("BlobPositionX0"+str(i+1),""))/100)            
+            length = 150   ##hard coding these for times sake, but can be parsed
+            height = 200
+            image_path = r.get("ImageDirectory","") + "\\" + r.get("ImageName","")
+            blob_path = self.failed_dir_var.get().strip() + "/model" + str(model) + "/" + str(i) + "_" + r.get("ImageName","")
+                       
+            cropBox = (posX-length/2,posY-height/2,posX+length/2,posY+length/2)
+            crop_image(image_path,blob_path,cropBox)
 
     def _run(self, execute=False):
         self.text.delete("1.0", tk.END)
@@ -205,6 +243,21 @@ class App(tk.Tk):
 
         base_model = extract_model_from_name(os.path.basename(csv_path), "Unknown")
         total_rows = len(rows)
+        under_max = []
+        blobAreas = []
+        for r in rows:           
+            try:
+                expected_max = int(r.get("BlobNumSearchMax",""))
+                val = to_float(r.get("BlobNumResults", ""))
+                if val != val:  # NaN
+                    continue
+                if val < expected_max:
+                    under_max.append((r.get("ImageName", ""), val))
+                self.extract_blob(int(val),r,csv_path) #for now use the csv path need to make it its own thing. 
+                blobAreas = self.parse_blob_area(int(val),r,blobAreas)
+            except:
+                ## without this try/except the last and first line of the csv will throw a fault
+                continue
 
         # Group rows by image
         grouped = defaultdict(list)
@@ -303,6 +356,9 @@ class App(tk.Tk):
         # UI
         self.text.insert(tk.END, f"CSV: {csv_path}\nTotal rows: {total_rows}\nExpected max: {expected_max}\n")
         self.text.insert(tk.END, f"Under-max count: {len(under_max)}\n")
+        self.text.insert(tk.END, f"Median blob size: " + str(median(blobAreas)) + " Min blob size: " + str(min(blobAreas)) + " Max blob size: " + str(max(blobAreas))+"\n\n")
+        
+        self.text.insert(tk.END, f"Log written to: {log_path}\n")
         if self.save_passed_var.get():
             self.text.insert(tk.END, f"Passed count: {len(passed)}\n")
         if log_path:
